@@ -31,9 +31,28 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def handle_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not await is_joined(context.bot, update.effective_user.id):
-        await update.message.reply_text("❌ اول باید داخل کانال جوین بشی")
+    user_id = update.effective_user.id
+    chat_id = update.effective_chat.id
+
+    # بررسی عضویت در کانال
+    try:
+        member = await context.bot.get_chat_member("@MaDoSiNPlus", user_id)
+        if member.status not in ["member", "administrator", "creator"]:
+            await update.message.reply_text("❌ اول باید عضو کانال بشی!")
+            return
+    except:
+        await update.message.reply_text("❌ خطا در بررسی عضویت، دوباره تلاش کن.")
         return
+
+    # پاک کردن پیام خوش آمدگویی (فرض می‌کنیم پیام قبلی آخرین پیام ربات است)
+    try:
+        await context.bot.delete_message(chat_id=chat_id, message_id=update.message.message_id - 1)
+    except:
+        pass  # اگر پاک کردن ممکن نبود، کرش نکنه
+
+    # پیام جدید
+    await update.message.reply_text("✅ خب الان لینک یوتیوبت رو بفرست 🤖⬇️")
+
 
     url = update.message.text
     if "youtu" not in url:
