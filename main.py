@@ -14,7 +14,7 @@ from telegram.ext import (
     CallbackQueryHandler
 )
 
-TOKEN = os.getenv("TELEGRAM_TOKEN")
+TOKEN = os.getenv("8537394978:AAHEJTe9_mQzUhR977Isc3qB6Lg8MYVoPSI")
 CHANNEL_USERNAME = "@MaDoSiNPlus"
 DOWNLOAD_PATH = "downloads"
 
