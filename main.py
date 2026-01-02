@@ -63,7 +63,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("⚠ لینک یوتیوب معتبر نیست! دوباره امتحان کنید.")
         return
 
-    # ذخیره لینک برای استفاده در callback
     context.user_data["yt_url"] = yt_url
 
     # بررسی عضویت کانال
@@ -93,7 +92,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = []
     for s in streams:
         if s.includes_audio_track:
-            label = f"{s.resolution} + صدا" if hasattr(s, "resolution") else "صدا فقط"
+            label = f"{s.resolution}" if hasattr(s, "resolution") else "صدا فقط"
         else:
             label = f"{s.resolution} (بدون صدا)" if hasattr(s, "resolution") else "ویدیو"
         keyboard.append([InlineKeyboardButton(label, callback_data=f"{s.itag}")])
