@@ -6,54 +6,50 @@ from threading import Thread
 import os
 import re
 
-# ---------------- Configuration ----------------
+# ---------- تنظیمات ----------
 TOKEN = "8537394978:AAGfdr-ujXBahs8uIfmHfMa2L7CO1coFvzA"
 CHANNEL = "@MaDoSiNPlus"
 
-# ---------------- Keep-Alive ----------------
+# ---------- Keep-Alive ----------
 app_web = Flask('')
 
 @app_web.route('/')
 def home():
     return "🤖 Bot Online: Systems Nominal ⚡"
 
-def run_web():
+def run():
     app_web.run(host='0.0.0.0', port=8080)
 
-Thread(target=run_web).start()
+Thread(target=run).start()
 
-# ---------------- Utilities ----------------
+# ---------- Utilities ----------
 def clean_filename(name):
     return re.sub(r'[\\/*?:"<>|]', "", name)
 
 def extract_youtube_url(text):
-    # پاک کردن فاصله اضافی
     text = text.strip()
-    # شناسایی هر نوع لینک یوتیوب حتی با پارامتر و متن اضافی
     pattern = r"(https?://(?:www\.)?(?:youtube\.com/watch\?v=|youtu\.be/)[\w\-]+(?:[&?][\w=%\-]*)*)"
     match = re.search(pattern, text)
     if match:
         return match.group(0)
     return None
 
-
-
 def get_streams(yt):
-    # Progressive streams first
-    streams = yt.streams.filter(progressive=True, file_extension='mp4').order_by('resolution').desc()
-    if streams:
-        return streams
-    # Adaptive 720p fallback
-    streams = yt.streams.filter(adaptive=True, file_extension='mp4', res="720p", only_video=True)
-    # Audio-only fallback
-    if not streams:
-        streams = yt.streams.filter(only_audio=True, file_extension='mp4')
+    streams = []
+    # Progressive video+audio
+    streams += yt.streams.filter(progressive=True, file_extension='mp4').order_by('resolution').desc()
+    # Adaptive video (احتمالا بدون صدا)
+    streams += yt.streams.filter(adaptive=True, file_extension='mp4', only_video=True, res="720p")
+    streams += yt.streams.filter(adaptive=True, file_extension='mp4', only_video=True, res="1080p")
+    # Audio-only
+    streams += yt.streams.filter(only_audio=True, file_extension='mp4')
     return streams
 
-# ---------------- Handlers ----------------
+# ---------- Handlers ----------
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "⚡ سلام! خوش آمدید. لینک یوتیوب رو برام بفرست تا واست دانلود کنم ⚡"
+        "⚡ System Online: YouTube Downloader Active\n"
+        "سلام! لینک یوتیوبتون رو برام بفرستین تا براتون آماده کنم."
     )
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -61,74 +57,77 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.message.chat_id
     text = update.message.text
 
-    # Extract YouTube URL
-    url = extract_youtube_url(text)
-    if not url:
+    # شناسایی لینک یوتیوب
+    yt_url = extract_youtube_url(text)
+    if not yt_url:
         await update.message.reply_text("⚠ لینک یوتیوب معتبر نیست! دوباره امتحان کنید.")
         return
 
-    # Check channel membership
+    # ذخیره لینک برای استفاده در callback
+    context.user_data["yt_url"] = yt_url
+
+    # بررسی عضویت کانال
     try:
         member = await context.bot.get_chat_member(chat_id=CHANNEL, user_id=user.id)
         if member.status in ["left", "kicked"]:
-            await update.message.reply_text(f"⚠ دسترسی ندارید! ابتدا در کانال {CHANNEL} جوین شوید.")
+            await update.message.reply_text(f"⚠ دسترسی ممنوع: لطفا اول عضو {CHANNEL} بشین! 🚀")
             return
     except:
-        await update.message.reply_text("⚠ خطا در بررسی عضویت. ربات باید ادمین کانال باشد.")
+        await update.message.reply_text("⚠ بررسی عضویت ناموفق بود. مطمئن شو ربات admin کانال هست.")
         return
 
-    # Create YouTube object
+    # ایجاد شی YouTube
     try:
-        yt = YouTube(url)
+        yt = YouTube(yt_url)
     except Exception as e:
-        await update.message.reply_text(f"⚠ خطا در خواندن لینک یوتیوب: {e}")
+        await update.message.reply_text(f"⚠ خطا در خواندن لینک: {e}")
         return
 
-    # Get streams
+    # دریافت استریم‌ها
     streams = get_streams(yt)
     if not streams:
-        await update.message.reply_text("⚠ هیچ استریم دانلودی در دسترس نیست (720p/1080p/adaptive).")
+        await update.message.reply_text("⚠ هیچ استریم قابل دانلودی موجود نیست!")
         return
 
-    # Store URL for callback
-    context.user_data["yt_url"] = url
-
-    # Build buttons
+    # ساخت دکمه‌ها
     keyboard = []
     for s in streams:
-        label = s.resolution if s.resolution else "Audio 🎵"
+        if s.includes_audio_track:
+            label = f"{s.resolution} + صدا" if hasattr(s, "resolution") else "صدا فقط"
+        else:
+            label = f"{s.resolution} (بدون صدا)" if hasattr(s, "resolution") else "ویدیو"
         keyboard.append([InlineKeyboardButton(label, callback_data=f"{s.itag}")])
     reply_markup = InlineKeyboardMarkup(keyboard)
-    await update.message.reply_text("⚡ کیفیت مورد نظر را انتخاب کنید:", reply_markup=reply_markup)
+    await update.message.reply_text("⚡ لطفا کیفیت مورد نظر رو انتخاب کنید:", reply_markup=reply_markup)
 
 async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     itag = query.data
+    yt_url = context.user_data.get("yt_url")
 
-    url = context.user_data.get("yt_url")
-    if not url:
-        await query.edit_message_text("⚠ لینک اصلی یافت نشد.")
+    if not yt_url:
+        await query.edit_message_text("⚠ لینک یوتیوب پیدا نشد! دوباره امتحان کنید.")
         return
 
     try:
-        yt = YouTube(url)
+        yt = YouTube(yt_url)
         stream = yt.streams.get_by_itag(itag)
         if not stream:
-            await query.edit_message_text("⚠ استریم انتخابی موجود نیست.")
+            await query.edit_message_text("⚠ استریم انتخاب شده موجود نیست.")
             return
 
-        await query.edit_message_text(f"⏳ در حال دانلود {stream.resolution if stream.resolution else 'Audio'}... ⚡")
-        file_path = f"{clean_filename(yt.title)[:50]}_{stream.resolution if stream.resolution else 'audio'}.mp4"
+        await query.edit_message_text(f"⏳ در حال دانلود {stream.resolution if hasattr(stream,'resolution') else 'صدا'} ... ⚡")
+        file_path = f"{clean_filename(yt.title)[:50]}_{stream.resolution if hasattr(stream,'resolution') else 'audio'}.mp4"
         stream.download(filename=file_path)
 
         await context.bot.send_video(chat_id=query.message.chat_id, video=open(file_path, "rb"))
         os.remove(file_path)
-        await query.edit_message_text(f"✅ دانلود کامل شد و ارسال شد: {stream.resolution if stream.resolution else 'Audio'} 💻")
+        await query.edit_message_text(f"✅ دانلود با موفقیت انجام شد: {stream.resolution if hasattr(stream,'resolution') else 'audio'} ⚡")
     except Exception as e:
         await query.edit_message_text(f"⚠ خطا در دانلود: {e}")
 
-# ---------------- Application ----------------
+# ---------- Application ----------
 app = ApplicationBuilder().token(TOKEN).build()
 app.add_handler(CommandHandler("start", start))
 app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
