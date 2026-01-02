@@ -9,7 +9,7 @@ import re
 TOKEN = "8537394978:AAGfdr-ujXBahs8uIfmHfMa2L7CO1coFvzA"
 CHANNEL = "@MaDoSiNPlus"
 
-# ---------------- Keep-Alive ----------------
+# ---------- Keep-Alive ----------
 app_web = Flask('')
 
 @app_web.route('/')
@@ -21,18 +21,24 @@ def run():
 
 Thread(target=run).start()
 
-# ---------------- Utils ----------------
+# ---------- Utilities ----------
 def clean_filename(name):
     return re.sub(r'[\\/*?:"<>|]', "", name)
 
-def get_progressive_stream(yt):
-    return yt.streams.filter(progressive=True, file_extension='mp4').order_by('resolution').desc().first()
+def get_streams(yt):
+    # Progressive streams اولویت
+    streams = yt.streams.filter(progressive=True, file_extension='mp4').order_by('resolution').desc()
+    if streams:
+        return streams
+    # Fallback به adaptive 720p
+    streams = yt.streams.filter(adaptive=True, file_extension='mp4', res="720p", only_video=True)
+    return streams
 
-# ---------------- Handlers ----------------
+# ---------- Handlers ----------
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "💻 System Active: YouTube Downloader Online ⚡\n"
-        "Send a YouTube link to initiate the transfer protocol."
+        "⚡ System Online: YouTube Downloader Active\n"
+        "Send a YouTube link to start the transfer protocol."
     )
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -40,9 +46,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.message.chat_id
     text = update.message.text
 
-    # Check for YouTube URL
+    # Validate YouTube URL
     if "youtube.com" not in text and "youtu.be" not in text:
-        await update.message.reply_text("⚠ Invalid YouTube link detected. 🔗")
+        await update.message.reply_text("⚠ Invalid YouTube link detected. Send a proper link.")
         return
 
     # Check channel membership
@@ -55,45 +61,49 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("⚠ Membership check failed. Ensure bot is admin in the channel.")
         return
 
-    # Build YouTube object
+    # Create YouTube object
     try:
         yt = YouTube(text)
     except Exception as e:
-        await update.message.reply_text(f"⚠ YouTube URL Error: {e}")
+        await update.message.reply_text(f"⚠ Error reading YouTube link: {e}")
         return
 
-    # Get progressive stream
-    stream = get_progressive_stream(yt)
-    if not stream:
-        await update.message.reply_text("⚠ No downloadable stream available (720p progressive missing).")
+    # Get streams
+    streams = get_streams(yt)
+    if not streams:
+        await update.message.reply_text("⚠ No downloadable stream available (720p progressive/adaptive missing).")
         return
 
-    keyboard = [[InlineKeyboardButton(f"{stream.resolution}", callback_data=f"{text}|{stream.resolution}")]]
+    # Build buttons
+    keyboard = []
+    for s in streams:
+        keyboard.append([InlineKeyboardButton(f"{s.resolution}", callback_data=f"{s.itag}")])
     reply_markup = InlineKeyboardMarkup(keyboard)
-    await update.message.reply_text("⚡ Select your desired resolution:", reply_markup=reply_markup)
+    await update.message.reply_text("⚡ Select desired resolution:", reply_markup=reply_markup)
 
 async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
-    url, quality = query.data.split("|")
+    itag = query.data
 
     try:
-        yt = YouTube(url)
-        await query.edit_message_text(f"⏳ Downloading {quality} video... Please wait. ⚡")
-        stream = yt.streams.filter(progressive=True, file_extension='mp4', res=quality).first()
+        yt = YouTube(query.message.text.split()[0])  # لینک یوتیوب از متن پیام قبلی
+        stream = yt.streams.get_by_itag(itag)
         if not stream:
-            await query.edit_message_text(f"⚠ Resolution {quality} not available.")
+            await query.edit_message_text("⚠ Selected stream unavailable.")
             return
 
-        file_path = f"{clean_filename(yt.title)[:50]}_{quality}.mp4"
+        await query.edit_message_text(f"⏳ Downloading {stream.resolution} video... ⚡")
+        file_path = f"{clean_filename(yt.title)[:50]}_{stream.resolution}.mp4"
         stream.download(filename=file_path)
+
         await context.bot.send_video(chat_id=query.message.chat_id, video=open(file_path, "rb"))
         os.remove(file_path)
-        await query.edit_message_text(f"✅ Download complete: {quality} transferred successfully. 💻")
+        await query.edit_message_text(f"✅ Download complete: {stream.resolution} transferred successfully. 💻")
     except Exception as e:
         await query.edit_message_text(f"⚠ Download error: {e}")
 
-# ---------------- Application ----------------
+# ---------- Application ----------
 app = ApplicationBuilder().token(TOKEN).build()
 app.add_handler(CommandHandler("start", start))
 app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
