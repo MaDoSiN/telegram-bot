@@ -1,38 +1,41 @@
 import os
 import tempfile
-import asyncio
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, ContextTypes, filters
 from pytube import YouTube
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
+from telegram.ext import (
+    Application,
+    CommandHandler,
+    MessageHandler,
+    CallbackQueryHandler,
+    ContextTypes,
+    filters,
+)
 
-# ================= تنظیمات =================
 BOT_TOKEN = "8537394978:AAHDcRQOXFKhRsT5qVOR3THpYC1hsVLjCAQ"
 CHANNEL = "@MaDoSiNPlus"
-MAX_FILE_SIZE_MB = 20  # حداکثر حجم ویدیو برای جلوگیری از کرش روی generous-smile
-DOWNLOAD_QUEUE = asyncio.Queue()
+MAX_MB = 20  # برای اینکه generous-smile کرش نکنه
 
-# ======= چک عضویت کانال =======
+# ---------- start ----------
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text(
+        "👋 سلام\n"
+        "اول عضو کانال شو:\n"
+        "https://t.me/MaDoSiNPlus\n\n"
+        "بعد لینک یوتیوب رو بفرست"
+    )
+
+# ---------- check join ----------
 async def is_member(context, user_id):
     try:
-        member = await context.bot.get_chat_member(CHANNEL, user_id)
-        return member.status not in ["left", "kicked"]
+        m = await context.bot.get_chat_member(CHANNEL, user_id)
+        return m.status not in ("left", "kicked")
     except:
         return False
 
-# ======= دستور /start =======
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(
-        f"👋 سلام {update.effective_user.first_name}!\n\n"
-        f"اول عضو کانال شو:\nhttps://t.me/{CHANNEL.replace('@','')}\n"
-        "بعد لینک یوتیوب رو بفرست."
-    )
-
-# ======= دریافت لینک =======
+# ---------- get link ----------
 async def get_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await is_member(context, update.effective_user.id):
-        await update.message.reply_text(
-            f"❌ اول باید عضو کانال بشی:\nhttps://t.me/{CHANNEL.replace('@','')}"
-        )
+        await update.message.reply_text("❌ اول عضو کانال شو")
         return
 
     url = update.message.text.strip()
@@ -41,61 +44,57 @@ async def get_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     keyboard = InlineKeyboardMarkup([
-        [InlineKeyboardButton("🎥 720p", callback_data=f"720|{url}")],
-        [InlineKeyboardButton("🎧 فقط صدا", callback_data=f"audio|{url}")]
+        [InlineKeyboardButton("🎥 720p", callback_data="720|" + url)],
+        [InlineKeyboardButton("🎧 فقط صدا", callback_data="audio|" + url)],
     ])
-    await update.message.reply_text("کیفیت رو انتخاب کن:", reply_markup=keyboard)
+    await update.message.reply_text("انتخاب کن:", reply_markup=keyboard)
 
-# ======= دانلود و ارسال =======
-async def download_worker(context):
-    while True:
-        user_id, quality, url = await DOWNLOAD_QUEUE.get()
-        try:
-            yt = YouTube(url)
-            with tempfile.TemporaryDirectory() as tmpdir:
-                if quality == "audio":
-                    stream = yt.streams.filter(only_audio=True).first()
-                    file_path = stream.download(output_path=tmpdir)
-                else:
-                    stream = yt.streams.filter(res="720p", progressive=True, file_extension="mp4").first()
-                    if not stream:
-                        await context.bot.send_message(chat_id=user_id, text="❌ کیفیت 720p موجود نیست")
-                        continue
-                    file_path = stream.download(output_path=tmpdir)
-
-                size_mb = os.path.getsize(file_path)/(1024*1024)
-                if size_mb > MAX_FILE_SIZE_MB:
-                    await context.bot.send_message(chat_id=user_id, text=f"❌ حجم فایل بیش از {MAX_FILE_SIZE_MB}MB است")
-                    continue
-
-                if quality == "audio":
-                    await context.bot.send_audio(chat_id=user_id, audio=open(file_path, "rb"))
-                else:
-                    await context.bot.send_video(chat_id=user_id, video=open(file_path, "rb"))
-        except Exception as e:
-            await context.bot.send_message(chat_id=user_id, text=f"❌ خطا در دانلود: {e}")
-        finally:
-            DOWNLOAD_QUEUE.task_done()
-
-# ======= CallbackQueryHandler =======
+# ---------- download ----------
 async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
-    quality, url = query.data.split("|")
-    await DOWNLOAD_QUEUE.put((query.from_user.id, quality, url))
-    await query.edit_message_text("⏳ در صف دانلود قرار گرفتید...")
 
-# ======= اجرای ربات =======
-async def main():
+    quality, url = query.data.split("|", 1)
+    await query.edit_message_text("⏳ در حال دانلود...")
+
+    try:
+        yt = YouTube(url)
+        with tempfile.TemporaryDirectory() as tmp:
+            if quality == "audio":
+                stream = yt.streams.filter(only_audio=True).first()
+            else:
+                stream = yt.streams.filter(progressive=True, res="720p", file_extension="mp4").first()
+
+            if not stream:
+                await query.message.reply_text("❌ این کیفیت موجود نیست")
+                return
+
+            path = stream.download(output_path=tmp)
+            size_mb = os.path.getsize(path) / (1024 * 1024)
+
+            if size_mb > MAX_MB:
+                await query.message.reply_text("❌ حجم فایل زیاده، قابل ارسال نیست")
+                return
+
+            if quality == "audio":
+                await query.message.reply_audio(audio=open(path, "rb"))
+            else:
+                await query.message.reply_video(video=open(path, "rb"))
+
+    except Exception as e:
+        await query.message.reply_text("❌ خطا در دانلود")
+
+# ---------- run ----------
+def main():
+    print("BOT RUNNING...")
     app = Application.builder().token(BOT_TOKEN).build()
+
     app.add_handler(CommandHandler("start", start))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, get_link))
     app.add_handler(CallbackQueryHandler(button))
 
-    # شروع Worker دانلود
-    asyncio.create_task(download_worker(app))
-
-    await app.run_polling()
+    # ⬅️ این مهم‌ترین خطه (بدون asyncio)
+    app.run_polling()
 
 if __name__ == "__main__":
-    asyncio.get_event_loop().run_until_complete(main())
+    main()
