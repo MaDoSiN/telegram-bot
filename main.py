@@ -1,73 +1,68 @@
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, CallbackQueryHandler, ContextTypes, filters
-import yt_dlp
+from pyrogram import Client, filters
+from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+from pytube import YouTube
 import os
 
-TOKEN = "8537394978:AAGfdr-ujXBahs8uIfmHfMa2L7CO1coFvzA"
-CHANNEL = "@MaDoSiNPlus"
+API_ID = 123456  # اینو از my.telegram.org بگیر
+API_HASH = "your_api_hash"  # اینم از my.telegram.org
+BOT_TOKEN = 8537394978:AAGfdr-ujXBahs8uIfmHfMa2L7CO1coFvzA  # **توکن جدید** بزار
 
-async def is_joined(bot, user_id):
-    try:
-        member = await bot.get_chat_member(CHANNEL, user_id)
-        return member.status in ["member", "administrator", "creator"]
-    except:
-        return False
+CHANNEL_USERNAME = "@MaDoSiNPlus"
 
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(
-        "👋 خوش اومدی\n"
-        "📌 اول داخل کانال جوین شو:\n"
-        "https://t.me/MaDoSiNPlus\n\n"
-        "بعد لینک یوتیوب رو بفرست"
+app = Client("youtube_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
+
+# استارت و خوش آمدگویی
+@app.on_message(filters.command("start"))
+async def start(client, message):
+    await message.reply_text(
+        f"سلام {message.from_user.first_name}! لطفا ابتدا عضو کانال {CHANNEL_USERNAME} شوید و بعد لینک یوتیوب خود را ارسال کنید."
     )
 
-async def handle_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not await is_joined(context.bot, update.effective_user.id):
-        await update.message.reply_text("❌ اول باید داخل کانال جوین بشی")
+# دریافت لینک یوتیوب
+@app.on_message(filters.text & ~filters.command)
+async def youtube_handler(client, message):
+    # چک عضویت کانال
+    member = await client.get_chat_member(CHANNEL_USERNAME, message.from_user.id)
+    if member.status in ["left", "kicked"]:
+        await message.reply_text(f"⚠ لطفا ابتدا عضو کانال {CHANNEL_USERNAME} شوید.")
         return
 
-    url = update.message.text
-    if "youtu" not in url:
-        await update.message.reply_text("❌ لینک یوتیوب معتبر نیست")
+    url = message.text
+    # بررسی لینک یوتیوب ساده
+    if "youtube.com" not in url and "youtu.be" not in url:
+        await message.reply_text("لینک یوتیوب معتبر وارد کنید.")
         return
 
-    keyboard = [
-        [InlineKeyboardButton("🎬 720p", callback_data=f"720|{url}")],
-        [InlineKeyboardButton("🎧 فقط صدا", callback_data=f"audio|{url}")]
-    ]
-    await update.message.reply_text(
-        "کیفیت رو انتخاب کن 👇",
-        reply_markup=InlineKeyboardMarkup(keyboard)
+    # دکمه‌های کیفیت
+    buttons = InlineKeyboardMarkup(
+        [
+            [InlineKeyboardButton("720p", callback_data=f"720|{url}")],
+            [InlineKeyboardButton("1080p", callback_data=f"1080|{url}")],
+            [InlineKeyboardButton("فقط صدا", callback_data=f"audio|{url}")],
+        ]
     )
+    await message.reply_text("کیفیت مورد نظر خود را انتخاب کنید:", reply_markup=buttons)
 
-async def download(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
+# پردازش انتخاب کیفیت
+@app.on_callback_query()
+async def callback(client, callback_query):
+    data = callback_query.data
+    quality, url = data.split("|")
 
-    quality, url = query.data.split("|")
-    filename = "file.mp4"
-
-    ydl_opts = {
-        "outtmpl": filename,
-        "format": "best[height<=720]/bestaudio" if quality == "720" else "bestaudio",
-        "quiet": True,
-        "noplaylist": True,
-    }
+    await callback_query.message.edit_text("در حال آماده‌سازی ویدیو ... لطفا صبر کنید.")
 
     try:
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            ydl.download([url])
-
-        await query.message.reply_document(open(filename, "rb"))
+        yt = YouTube(url)
+        if quality == "audio":
+            stream = yt.streams.filter(only_audio=True).first()
+        else:
+            stream = yt.streams.filter(res=quality, progressive=True).first()
+        
+        file_path = stream.download()
+        await client.send_video(callback_query.from_user.id, file_path) if quality != "audio" else await client.send_audio(callback_query.from_user.id, file_path)
+        os.remove(file_path)
+        await callback_query.message.edit_text("✅ فایل ارسال شد.")
     except Exception as e:
-        await query.message.reply_text("❌ خطا در دانلود (احتمالاً حجم بالا)")
-    finally:
-        if os.path.exists(filename):
-            os.remove(filename)
+        await callback_query.message.edit_text(f"❌ خطا در دانلود: {e}")
 
-if __name__ == "__main__":
-    app = ApplicationBuilder().token(TOKEN).build()
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_link))
-    app.add_handler(CallbackQueryHandler(download))
-    app.run_polling()
+app.run()
