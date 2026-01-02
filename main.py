@@ -1,92 +1,56 @@
-import os
-from pytube import YouTube
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import Updater, CommandHandler, MessageHandler, Filters, CallbackContext
+from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, ContextTypes, filters, CallbackQueryHandler
+from pytube import YouTube
+import os
 
-# ==========================
-# ⚠️ حتماً توکن جدید خودت را اینجا بگذار
-TOKEN = "8537394978:AAHjpbH2sXCkVhgRqU2kZAw9Hepcfa0UbA4"
-CHANNEL_USERNAME = "@MaDoSiNPlus"
-# ==========================
+CHANNEL_LINK = "https://t.me/MaDoSiNPlus"
 
-# --------------------------
-# دستور استارت
-def start(update: Update, context: CallbackContext):
-    update.message.reply_text(
-        "👋 سلام! خوش آمدید!\n\n"
-        "🔒 لطفا برای استفاده از ربات ابتدا عضو کانال شوید:\n"
-        "https://t.me/MaDoSiNPlus\n\n"
-        "بعد از جوین، لینک یوتیوب خود را ارسال کنید."
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = update.effective_user
+    # چک کردن جوین شدن در کانال (میتونی با Telegram Bot API Channel Membership بررسی کنی)
+    await update.message.reply_text(
+        f"سلام {user.first_name}! برای ادامه باید ابتدا به چنل ما جوین شوی:\n{CHANNEL_LINK}\n\nبعد لینک یوتیوب را ارسال کن."
     )
 
-# --------------------------
-# بررسی عضویت کاربر
-def is_user_joined(bot, user_id):
-    try:
-        member = bot.get_chat_member(CHANNEL_USERNAME, user_id)
-        return member.status in ["member", "administrator", "creator"]
-    except:
-        return False
-
-# --------------------------
-# دریافت لینک یوتیوب
-def handle_link(update: Update, context: CallbackContext):
-    user_id = update.effective_user.id
-
-    if not is_user_joined(context.bot, user_id):
-        update.message.reply_text(
-            "❌ هنوز عضو کانال نشدید. لطفا ابتدا جوین شوید:\n"
-            "https://t.me/MaDoSiNPlus"
-        )
-        return
-
-    url = update.message.text.strip()
+async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    url = update.message.text
     if "youtube.com" not in url and "youtu.be" not in url:
-        update.message.reply_text("❌ لینک یوتیوب معتبر نیست.")
+        await update.message.reply_text("لطفاً یک لینک یوتیوب معتبر ارسال کنید.")
         return
 
+    # ساخت دکمه‌های کیفیت
+    keyboard = [
+        [InlineKeyboardButton("1080p", callback_data=f"{url}|1080")],
+        [InlineKeyboardButton("720p", callback_data=f"{url}|720")],
+        [InlineKeyboardButton("فقط صدا", callback_data=f"{url}|audio")]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    await update.message.reply_text("کیفیت مورد نظر را انتخاب کنید:", reply_markup=reply_markup)
+
+async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    url, choice = query.data.split("|")
+    
     try:
         yt = YouTube(url)
-        buttons = []
-
-        # لینک 720p
-        stream_720 = yt.streams.filter(res="720p", progressive=True).first()
-        if stream_720:
-            buttons.append([InlineKeyboardButton("🎬 720p", url=stream_720.url)])
-
-        # لینک 360p
-        stream_360 = yt.streams.filter(res="360p", progressive=True).first()
-        if stream_360:
-            buttons.append([InlineKeyboardButton("📹 360p", url=stream_360.url)])
-
-        # فقط صدا
-        stream_audio = yt.streams.filter(only_audio=True).first()
-        if stream_audio:
-            buttons.append([InlineKeyboardButton("🎧 فقط صدا", url=stream_audio.url)])
-
-        if not buttons:
-            update.message.reply_text("❌ هیچ لینک دانلود موجود نیست.")
-            return
-
-        update.message.reply_text(
-            "کیفیت مورد نظر خود را انتخاب کنید:",
-            reply_markup=InlineKeyboardMarkup(buttons)
-        )
-
+        if choice == "audio":
+            stream = yt.streams.filter(only_audio=True).first()
+        else:
+            stream = yt.streams.filter(res=choice, file_extension="mp4").first()
+        
+        file_path = stream.download()
+        await query.message.reply_document(open(file_path, 'rb'))
+        os.remove(file_path)
     except Exception as e:
-        update.message.reply_text(f"❌ خطا در پردازش ویدیو: {e}")
-
-# --------------------------
-# اجرا
-def main():
-    updater = Updater(TOKEN, use_context=True)
-    dp = updater.dispatcher
-
-    dp.add_handler(CommandHandler("start", start))
-    dp.add_handler(MessageHandler(Filters.text & ~Filters.command, handle_link))
-
-    updater.start_polling()
-    updater.idle()
+        await query.message.reply_text(f"مشکلی پیش آمد: {e}")
 
 if __name__ == "__main__":
-    main()
+    app = ApplicationBuilder().token("8537394978:AAHjpbH2sXCkVhgRqU2kZAw9Hepcfa0UbA4").build()
+    
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+    app.add_handler(CallbackQueryHandler(button))
+
+    print("Bot started...")
+    app.run_polling()
