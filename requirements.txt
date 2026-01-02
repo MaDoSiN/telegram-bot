@@ -1,3 +1,4 @@
-python-telegram-bot==20.3
-yt-dlp
+pyrogram==2.0.53
+tgcrypto==1.2.0
+pytube==15.0.1
 
