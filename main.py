@@ -14,12 +14,20 @@ async def is_joined(bot, user_id):
         return False
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(
-        "👋 خوش اومدی\n"
-        "📌 اول داخل کانال جوین شو:\n"
-        "https://t.me/MaDoSiNPlus\n\n"
-        "بعد لینک یوتیوب رو بفرست"
+    user = update.effective_user
+    text = (
+        "✨👋 هی رفیق! 👋✨\n\n"
+        "برای استفاده از این ربات باید اول به کانال ما جوین بشی 🛡️🌟🎉\n\n"
+        "📌 روی دکمه زیر کلیک کن و جوین شو:"
     )
+
+    keyboard = [
+        [InlineKeyboardButton("💎 جوین کانال", url=f"https://t.me/MaDoSiNPlus")]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+
+    await update.message.reply_text(text, reply_markup=reply_markup, parse_mode="HTML")
+
 
 async def handle_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await is_joined(context.bot, update.effective_user.id):
