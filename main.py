@@ -7,9 +7,9 @@ from pytube import YouTube
 # ======= تنظیمات =======
 BOT_TOKEN = "8537394978:AAHjpbH2sXCkVhgRqU2kZAw9Hepcfa0UbA4"  # جایگزین توکن خودت کن
 CHANNEL = "@MaDoSiNPlus"
-MAX_FILE_SIZE_MB = 2000  # حداکثر حجم قابل ارسال (حدود 2GB)
+MAX_FILE_SIZE_MB = 100  # حداکثر حجم برای جلوگیری از کرش
 
-# ======= بررسی عضویت کانال =======
+# ======= چک عضویت کانال =======
 async def is_member(context, user_id):
     try:
         member = await context.bot.get_chat_member(CHANNEL, user_id)
@@ -17,7 +17,7 @@ async def is_member(context, user_id):
     except:
         return False
 
-# ======= استارت =======
+# ======= دستور /start =======
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         f"👋 سلام {update.effective_user.first_name}!\n\n"
@@ -57,27 +57,34 @@ async def download(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if quality == "audio":
                 stream = yt.streams.filter(only_audio=True).first()
                 file_path = stream.download(output_path=tmpdir)
-                await context.bot.send_audio(chat_id=query.from_user.id, audio=open(file_path, "rb"))
             else:
                 stream = yt.streams.filter(res="720p", progressive=True, file_extension="mp4").first()
                 if not stream:
                     await query.edit_message_text("❌ کیفیت 720p موجود نیست")
                     return
                 file_path = stream.download(output_path=tmpdir)
+
+            # بررسی حجم فایل برای جلوگیری از کرش
+            size_mb = os.path.getsize(file_path)/(1024*1024)
+            if size_mb > MAX_FILE_SIZE_MB:
+                await query.edit_message_text("❌ حجم فایل بیش از حد است (حداکثر 100MB)")
+                return
+
+            # ارسال فایل
+            if quality == "audio":
+                await context.bot.send_audio(chat_id=query.from_user.id, audio=open(file_path, "rb"))
+            else:
                 await context.bot.send_video(chat_id=query.from_user.id, video=open(file_path, "rb"))
 
         await query.edit_message_text("✅ ارسال شد!")
+
     except Exception as e:
         await query.edit_message_text(f"❌ خطا در دانلود: {e}")
 
-# ======= اجرا =======
+# ======= اجرای ربات =======
 async def main():
     app = Application.builder().token(BOT_TOKEN).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, get_link))
     app.add_handler(CallbackQueryHandler(download))
-    await app.run_polling()
-
-if __name__ == "__main__":
-    import asyncio
-    asyncio.run(main())
+    await app.run_polling()_
