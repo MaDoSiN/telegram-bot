@@ -27,11 +27,13 @@ def clean_filename(name):
     return re.sub(r'[\\/*?:"<>|]', "", name)
 
 def extract_youtube_url(text):
-    pattern = r"(https?://(?:www\.)?youtu(?:\.be/|be\.com/watch\?v=)[\w-]+)"
+    # قبول می‌کنه لینک‌های معمولی، کوتاه، و با پارامتر
+    pattern = r"(https?://(?:www\.)?(?:youtube\.com/watch\?v=|youtu\.be/)[\w\-]+(?:&[\w=\-]*)*)"
     match = re.search(pattern, text)
     if match:
         return match.group(0)
     return None
+
 
 def get_streams(yt):
     # Progressive streams first
