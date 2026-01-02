@@ -3,18 +3,13 @@ from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes, Callb
 from pytube import YouTube
 from flask import Flask
 from threading import Thread
-import os 
+import os
 import re
-
-def clean_filename(name):
-    # حذف کاراکترهای غیرمجاز برای ویندوز
-    return re.sub(r'[\\/*?:"<>|]', "", name)
-
 
 TOKEN = "8537394978:AAGfdr-ujXBahs8uIfmHfMa2L7CO1coFvzA"
 CHANNEL = "@MaDoSiNPlus"  # کانال اجباری
 
-# ---- Keep Alive ----
+# ---------------- Keep-Alive ----------------
 app_web = Flask('')
 
 @app_web.route('/')
@@ -30,7 +25,18 @@ def keep_alive():
 
 keep_alive()
 
-# ---- Bot ----
+# ---------------- Utils ----------------
+def clean_filename(name):
+    return re.sub(r'[\\/*?:"<>|]', "", name)
+
+def get_stream(yt, quality):
+    try:
+        stream = yt.streams.filter(progressive=True, file_extension='mp4', res=quality).first()
+        return stream
+    except:
+        return None
+
+# ---------------- Bot Handlers ----------------
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("سلام! ربات آماده است.\nلینک یوتیوب بفرست تا دانلود کنم.")
 
@@ -39,7 +45,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.message.chat_id
     text = update.message.text
 
-    # بررسی لینک یوتیوب
     if "youtube.com" not in text and "youtu.be" not in text:
         await update.message.reply_text("لینک یوتیوب معتبر بفرست!")
         return
@@ -71,22 +76,21 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     try:
         yt = YouTube(url)
-        stream = yt.streams.filter(progressive=True, file_extension='mp4', res=quality).first()
+        stream = get_stream(yt, quality)
         if not stream:
-            await query.edit_message_text("⚠ کیفیت انتخاب شده موجود نیست!")
+            await query.edit_message_text(f"⚠ کیفیت {quality} موجود نیست!")
             return
 
         file_path = f"{clean_filename(yt.title)[:50]}.mp4"
-stream.download(filename=file_path)
-
+        stream.download(filename=file_path)
 
         await context.bot.send_video(chat_id=query.message.chat_id, video=open(file_path, "rb"))
-        os.remove(file_path)  # حذف فایل بعد از ارسال
-        await query.edit_message_text(f"دانلود ویدیو با کیفیت {quality} انجام شد!")
+        os.remove(file_path)
+        await query.edit_message_text(f"✅ دانلود ویدیو با کیفیت {quality} انجام شد!")
     except Exception as e:
         await query.edit_message_text(f"⚠ خطا در دانلود: {e}")
 
-# ---- Application ----
+# ---------------- Application ----------------
 app = ApplicationBuilder().token(TOKEN).build()
 app.add_handler(CommandHandler("start", start))
 app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
