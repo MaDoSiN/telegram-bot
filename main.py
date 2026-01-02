@@ -5,11 +5,11 @@ from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQu
 from pytube import YouTube
 
 # ======= تنظیمات =======
-BOT_TOKEN = "8537394978:AAHjpbH2sXCkVhgRqU2kZAw9Hepcfa0UbA4"  # جایگزین توکن خودت کن
+BOT_TOKEN = "8537394978:AAHjpbH2sXCkVhgRqU2kZAw9Hepcfa0UbA4"
 CHANNEL = "@MaDoSiNPlus"
 MAX_FILE_SIZE_MB = 100  # حداکثر حجم برای جلوگیری از کرش
 
-# ======= چک عضویت کانال =======
+# ======= بررسی عضویت کانال =======
 async def is_member(context, user_id):
     try:
         member = await context.bot.get_chat_member(CHANNEL, user_id)
@@ -87,4 +87,8 @@ async def main():
     app.add_handler(CommandHandler("start", start))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, get_link))
     app.add_handler(CallbackQueryHandler(download))
-    await app.run_polling()_
+    await app.run_polling()
+
+if __name__ == "__main__":
+    import asyncio
+    asyncio.run(main())
