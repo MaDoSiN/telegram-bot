@@ -1,4 +1,4 @@
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, CallbackQueryHandler, ContextTypes, filters
 import yt_dlp
 import os
@@ -13,20 +13,26 @@ async def is_joined(bot, user_id):
     except:
         return False
 
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user = update.effective_user
-    text = (
-        "🤖 سلام رفیق!\n\n"
-        "برای استفاده از ربات باید اول عضو کانالمون بشی 🏷️\n\n"
-        "🔗 روی دکمه زیر کلیک کن:"
-    )
-
-    keyboard = [
-        [InlineKeyboardButton("🤖 جوین کانال", url="https://t.me/MaDoSiNPlus")]
-    ]
+async def start(update, context):
+    text = "🤖 سلام رفیق!\nبرای استفاده از ربات باید اول عضو کانالمون بشی 🏷️"
+    keyboard = [[InlineKeyboardButton("✅ من عضو شدم", callback_data="check_join")]]
     reply_markup = InlineKeyboardMarkup(keyboard)
-
     await update.message.reply_text(text, reply_markup=reply_markup)
+
+async def check_join(update, context):
+    query = update.callback_query
+    user_id = query.from_user.id
+    chat_id = query.message.chat.id
+
+    # بررسی عضویت
+    member = await context.bot.get_chat_member("@MaDoSiNPlus", user_id)
+    if member.status in ["member", "administrator", "creator"]:
+        # حذف پیام خوش‌آمدگویی
+        await query.message.delete()
+        # پیام جدید
+        await query.message.reply_text("✅ خب الان لینک یوتیوبت رو بفرست 🤖⬇️")
+    else:
+        await query.answer("❌ هنوز عضو کانال نشدی!", show_alert=True)
 
 
 
