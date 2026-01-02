@@ -1,9 +1,9 @@
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, CallbackQueryHandler, ContextTypes, filters
 import yt_dlp
 import os
 
-TOKEN = "8537394978:AAHjpbH2sXCkVhgRqU2kZAw9Hepcfa0UbA4"
+TOKEN = "8537394978:AAGfdr-ujXBahs8uIfmHfMa2L7CO1coFvzA"
 CHANNEL = "@MaDoSiNPlus"
 
 async def is_joined(bot, user_id):
@@ -13,52 +13,18 @@ async def is_joined(bot, user_id):
     except:
         return False
 
-async def start(update, context):
-    text = "🤖 سلام رفیق!\nبرای استفاده از ربات باید اول عضو کانالمون بشی 🏷️"
-    keyboard = [[InlineKeyboardButton("✅ من عضو شدم", callback_data="check_join")]]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    await update.message.reply_text(text, reply_markup=reply_markup)
-
-async def check_join(update, context):
-    query = update.callback_query
-    user_id = query.from_user.id
-    chat_id = query.message.chat.id
-
-    # بررسی عضویت
-    member = await context.bot.get_chat_member("@MaDoSiNPlus", user_id)
-    if member.status in ["member", "administrator", "creator"]:
-        # حذف پیام خوش‌آمدگویی
-        await query.message.delete()
-        # پیام جدید
-        await query.message.reply_text("✅ خب الان لینک یوتیوبت رو بفرست 🤖⬇️")
-    else:
-        await query.answer("❌ هنوز عضو کانال نشدی!", show_alert=True)
-
-
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text(
+        "👋 خوش اومدی\n"
+        "📌 اول داخل کانال جوین شو:\n"
+        "https://t.me/MaDoSiNPlus\n\n"
+        "بعد لینک یوتیوب رو بفرست"
+    )
 
 async def handle_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    chat_id = update.effective_chat.id
-
-    # بررسی عضویت در کانال
-    try:
-        member = await context.bot.get_chat_member("@MaDoSiNPlus", user_id)
-        if member.status not in ["member", "administrator", "creator"]:
-            await update.message.reply_text("❌ اول باید عضو کانال بشی!")
-            return
-    except:
-        await update.message.reply_text("❌ خطا در بررسی عضویت، دوباره تلاش کن.")
+    if not await is_joined(context.bot, update.effective_user.id):
+        await update.message.reply_text("❌ اول باید داخل کانال جوین بشی")
         return
-
-    # پاک کردن پیام خوش آمدگویی (فرض می‌کنیم پیام قبلی آخرین پیام ربات است)
-    try:
-        await context.bot.delete_message(chat_id=chat_id, message_id=update.message.message_id - 1)
-    except:
-        pass  # اگر پاک کردن ممکن نبود، کرش نکنه
-
-    # پیام جدید
-    await update.message.reply_text("✅ خب الان لینک یوتیوبت رو بفرست 🤖⬇️")
-
 
     url = update.message.text
     if "youtu" not in url:
