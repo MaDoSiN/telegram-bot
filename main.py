@@ -3,7 +3,13 @@ from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes, Callb
 from pytube import YouTube
 from flask import Flask
 from threading import Thread
-import os
+import os 
+import re
+
+def clean_filename(name):
+    # حذف کاراکترهای غیرمجاز برای ویندوز
+    return re.sub(r'[\\/*?:"<>|]', "", name)
+
 
 TOKEN = "8537394978:AAGfdr-ujXBahs8uIfmHfMa2L7CO1coFvzA"
 CHANNEL = "@MaDoSiNPlus"  # کانال اجباری
@@ -70,8 +76,9 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.edit_message_text("⚠ کیفیت انتخاب شده موجود نیست!")
             return
 
-        file_path = f"{yt.title[:20]}.mp4"
-        stream.download(filename=file_path)
+        file_path = f"{clean_filename(yt.title)[:50]}.mp4"
+stream.download(filename=file_path)
+
 
         await context.bot.send_video(chat_id=query.message.chat_id, video=open(file_path, "rb"))
         os.remove(file_path)  # حذف فایل بعد از ارسال
