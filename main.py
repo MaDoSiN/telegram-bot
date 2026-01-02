@@ -1,162 +1,106 @@
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import (
-    ApplicationBuilder,
-    CommandHandler,
-    MessageHandler,
-    CallbackQueryHandler,
-    ContextTypes,
-    filters,
-)
-from pytube import YouTube
-from flask import Flask
-from threading import Thread
-import re
 import os
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import Updater, CommandHandler, MessageHandler, Filters, CallbackContext, CallbackQueryHandler
+from pytube import YouTube
 
-# ================= CONFIG =================
-TOKEN = "8537394978:AAGfdr-ujXBahs8uIfmHfMa2L7CO1coFvzA"
-CHANNEL_USERNAME = "@MaDoSiNPlus"
+TOKEN = "8537394978:AAGfdr-ujXBahs8uIfmHfMa2L7CO1coFvzA"  # توکن ربات
 
-# ================= KEEP ALIVE =================
-app = Flask("")
+DOWNLOAD_PATH = "downloads"
+os.makedirs(DOWNLOAD_PATH, exist_ok=True)
 
-@app.route("/")
-def home():
-    return "Bot is running"
+# ذخیره وضعیت کاربر برای بررسی جوین کانال
+users_ready = {}
 
-def run_web():
-    app.run(host="0.0.0.0", port=8080)
+CHANNEL_LINK = "https://t.me/MaDoSiNPlus"
 
-Thread(target=run_web).start()
+# -----------------------------
 
-# ================= UTILS =================
-def extract_youtube_url(text: str):
-    patterns = [
-        r"(https?://(?:www\.)?youtube\.com/watch\?v=[\w-]+)",
-        r"(https?://youtu\.be/[\w-]+)",
-        r"(https?://(?:www\.)?youtube\.com/shorts/[\w-]+)"
-    ]
-    for p in patterns:
-        match = re.search(p, text)
-        if match:
-            url = match.group(0)
-            # تبدیل Shorts به لینک عادی
-            if "shorts" in url:
-                video_id = url.split("/")[-1]
-                url = f"https://www.youtube.com/watch?v={video_id}"
-            return url
-    return None
-
-def clean_filename(name):
-    return re.sub(r'[\\/*?:"<>|]', "", name)
-
-# ================= HANDLERS =================
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(
-        "⚡ ربات دانلود یوتیوب فعال شد\n\n"
-        "🔗 لینک یوتیوب (عادی یا Shorts) رو بفرست\n"
-        "🎬 کیفیت انتخاب کن، دانلود کن"
+def start(update: Update, context: CallbackContext):
+    chat_id = update.effective_chat.id
+    users_ready[chat_id] = False
+    update.message.reply_text(
+        f"سلام! خوش آمدید!\nلطفا برای استفاده از ربات در کانال جوین شوید:\n{CHANNEL_LINK}"
     )
 
-async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    text = update.message.text
-    user = update.message.from_user
+def check_channel(update: Update, context: CallbackContext):
+    chat_id = update.effective_chat.id
+    # برای ساده‌سازی، فرض می‌کنیم کاربر جوین شده بعد از هر پیام
+    # برای بررسی واقعی می‌توان از تلگرام API استفاده کرد
+    if not users_ready.get(chat_id, False):
+        users_ready[chat_id] = True
+        update.message.reply_text("خب، حالا لینک یوتیوبتون رو بفرستین:")
 
-    url = extract_youtube_url(text)
-    if not url:
-        await update.message.reply_text("⚠ لینک یوتیوب معتبر نیست!")
+def handle_youtube(update: Update, context: CallbackContext):
+    chat_id = update.effective_chat.id
+    if not users_ready.get(chat_id, False):
+        update.message.reply_text(f"لطفا ابتدا در کانال جوین شوید:\n{CHANNEL_LINK}")
         return
 
-    # ---------- JOIN CHECK ----------
-    try:
-        member = await context.bot.get_chat_member(CHANNEL_USERNAME, user.id)
-        if member.status in ["left", "kicked"]:
-            await update.message.reply_text(
-                f"❗ برای استفاده از ربات ابتدا عضو کانال شو:\n{CHANNEL_USERNAME}"
-            )
-            return
-    except:
-        await update.message.reply_text("⚠ خطا در بررسی عضویت (ربات ادمین نیست)")
+    url = update.message.text
+    if 'youtube.com' not in url and 'youtu.be' not in url:
+        update.message.reply_text("این لینک یوتیوب نیست! دوباره امتحان کنید.")
         return
 
-    # ---------- YOUTUBE ----------
     try:
         yt = YouTube(url)
-        context.user_data["yt_url"] = url
+        # ساخت کیبورد با سه گزینه: 720, 1080, صدا
+        keyboard = [
+            [InlineKeyboardButton("Video 720p", callback_data=f"720|{url}")],
+            [InlineKeyboardButton("Video 1080p", callback_data=f"1080|{url}")],
+            [InlineKeyboardButton("Audio Only", callback_data=f"audio|{url}")]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        update.message.reply_text("لطفا کیفیت مورد نظر رو انتخاب کنید:", reply_markup=reply_markup)
     except Exception as e:
-        await update.message.reply_text("⚠ خطا در پردازش لینک یوتیوب")
-        return
+        update.message.reply_text(f"خطا در پردازش لینک: {e}")
 
-    keyboard = []
-
-    # progressive (720)
-    prog = yt.streams.filter(progressive=True, file_extension="mp4")
-    if prog:
-        s720 = prog.filter(res="720p").first()
-        if s720:
-            keyboard.append([InlineKeyboardButton("🎥 720p", callback_data=s720.itag)])
-
-    # adaptive 1080
-    vid1080 = yt.streams.filter(res="1080p", adaptive=True, only_video=True).first()
-    if vid1080:
-        keyboard.append([InlineKeyboardButton("🎬 1080p", callback_data=vid1080.itag)])
-
-    # audio
-    audio = yt.streams.filter(only_audio=True).first()
-    if audio:
-        keyboard.append([InlineKeyboardButton("🎧 فقط صدا", callback_data=audio.itag)])
-
-    if not keyboard:
-        await update.message.reply_text("⚠ کیفیت قابل دانلود پیدا نشد")
-        return
-
-    await update.message.reply_text(
-        "⚙ کیفیت مورد نظر رو انتخاب کن:",
-        reply_markup=InlineKeyboardMarkup(keyboard)
-    )
-
-async def handle_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
+def button_handler(update: Update, context: CallbackContext):
     query = update.callback_query
-    await query.answer()
+    query.answer()
+    choice, url = query.data.split("|")
 
-    itag = query.data
-    url = context.user_data.get("yt_url")
+    try:
+        yt = YouTube(url)
+        if choice == "720":
+            stream = yt.streams.filter(res="720p", progressive=True).first()
+        elif choice == "1080":
+            stream = yt.streams.filter(res="1080p", progressive=True).first()
+        elif choice == "audio":
+            stream = yt.streams.filter(only_audio=True).first()
+        else:
+            query.edit_message_text("انتخاب نامعتبر")
+            return
 
-    if not url:
-        await query.edit_message_text("⚠ لینک منقضی شده، دوباره بفرست")
-        return
+        if not stream:
+            query.edit_message_text("کیفیت مورد نظر موجود نیست.")
+            return
 
-    yt = YouTube(url)
-    stream = yt.streams.get_by_itag(itag)
+        filepath = stream.download(DOWNLOAD_PATH)
+        query.edit_message_text(f"دانلود شد: {yt.title}")
+        # ارسال فایل به کاربر
+        if choice == "audio":
+            with open(filepath, "rb") as f:
+                context.bot.send_audio(chat_id=query.message.chat.id, audio=f)
+        else:
+            with open(filepath, "rb") as f:
+                context.bot.send_video(chat_id=query.message.chat.id, video=f)
+        os.remove(filepath)
+    except Exception as e:
+        query.edit_message_text(f"خطا: {e}")
 
-    if not stream:
-        await query.edit_message_text("⚠ این کیفیت در دسترس نیست")
-        return
+# -----------------------------
 
-    await query.edit_message_text("⏳ در حال دانلود...")
+def main():
+    updater = Updater(TOKEN)
+    dp = updater.dispatcher
 
-    filename = clean_filename(yt.title)[:50]
-    path = stream.download(filename=filename)
+    dp.add_handler(CommandHandler("start", start))
+    dp.add_handler(MessageHandler(Filters.text & ~Filters.command, check_channel))
+    dp.add_handler(MessageHandler(Filters.text & ~Filters.command, handle_youtube))
+    dp.add_handler(CallbackQueryHandler(button_handler))
 
-    if stream.only_audio:
-        await context.bot.send_audio(
-            chat_id=query.message.chat_id,
-            audio=open(path, "rb"),
-            title=yt.title
-        )
-    else:
-        await context.bot.send_video(
-            chat_id=query.message.chat_id,
-            video=open(path, "rb"),
-            supports_streaming=True
-        )
+    updater.start_polling()
+    updater.idle()
 
-    os.remove(path)
-
-# ================= RUN =================
-application = ApplicationBuilder().token(TOKEN).build()
-application.add_handler(CommandHandler("start", start))
-application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-application.add_handler(CallbackQueryHandler(handle_button))
-
-application.run_polling()
+if __name__ == "__main__":
+    main()
