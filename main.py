@@ -3,7 +3,7 @@ from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQu
 from pytube import YouTube
 import os
 
-BOT_TOKEN = "8537394978:AAGfdr-ujXBahs8uIfmHfMa2L7CO1coFvzA"
+BOT_TOKEN = "8537394978:AAHjpbH2sXCkVhgRqU2kZAw9Hepcfa0UbA4"
 CHANNEL = "@MaDoSiNPlus"
 
 # ---------- چک عضویت ----------
@@ -17,16 +17,18 @@ async def is_member(context, user_id):
 # ---------- start ----------
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "👋 خوش اومدی\n\n"
-        "🔹 اول عضو کانال شو:\n"
-        "https://t.me/MaDoSiNPlus\n\n"
-        "🔹 بعد لینک یوتیوب رو بفرست"
+        "👋 خوش اومدی!\n"
+        "اول عضو کانال شو:\n"
+        f"https://t.me/{CHANNEL.replace('@','')}\n"
+        "بعد لینک یوتیوب رو بفرست."
     )
 
 # ---------- دریافت لینک ----------
 async def get_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await is_member(context, update.effective_user.id):
-        await update.message.reply_text("❌ اول باید عضو کانال بشی:\nhttps://t.me/MaDoSiNPlus")
+        await update.message.reply_text(
+            f"❌ اول باید عضو کانال بشی:\nhttps://t.me/{CHANNEL.replace('@','')}"
+        )
         return
 
     url = update.message.text
@@ -52,7 +54,6 @@ async def download(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     try:
         yt = YouTube(url)
-
         if quality == "audio":
             stream = yt.streams.filter(only_audio=True).first()
         else:
@@ -71,15 +72,16 @@ async def download(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         os.remove(file_path)
         await query.edit_message_text("✅ ارسال شد")
-
-    except:
-        await query.edit_message_text("❌ خطا در دانلود")
+    except Exception as e:
+        await query.edit_message_text(f"❌ خطا در دانلود: {e}")
 
 # ---------- اجرا ----------
-app = Application.builder().token(BOT_TOKEN).build()
+async def main():
+    app = Application.builder().token(BOT_TOKEN).build()
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, get_link))
+    app.add_handler(CallbackQueryHandler(download))
+    await app.run_polling()
 
-app.add_handler(CommandHandler("start", start))
-app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, get_link))
-app.add_handler(CallbackQueryHandler(download))
-
-app.run_polling()
+import asyncio
+asyncio.run(main())
